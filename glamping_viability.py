@@ -1,5 +1,6 @@
 from qgis.PyQt.QtWidgets import QAction, QMessageBox
 from qgis.core import *
+from PyQt5.QtGui import QColor
 from PyQt5.QtCore import QVariant
 from qgis.gui import *
 from qgis import processing
@@ -51,12 +52,9 @@ class GlampingViability:
             QMessageBox.critical(None, "Error", f"Error aplicando máscara:\n{str(e)}")
             return
 
-        capa_filtrada = resultado['OUTPUT']
-        capa_filtrada.setName("Resultado_Viabilidad")
-
-        QgsProject.instance().addMapLayer(capa_filtrada)
-
-        layer = capa_filtrada
+        layer = resultado['OUTPUT']
+        layer.setName("Resultado_Viabilidad")
+        QgsProject.instance().addMapLayer(layer)
 
         # =========================
         # 3. Crear campo viabilidad
@@ -66,7 +64,6 @@ class GlampingViability:
             layer.addAttribute(QgsField('viabilidad', QVariant.Double))
             layer.updateFields()
 
-        # Iniciar edición si no está activa
         if not layer.isEditable():
             layer.startEditing()
 
@@ -97,14 +94,39 @@ class GlampingViability:
 
             layer.changeAttributeValue(feat.id(), idx_viab, viabilidad)
 
-        # =========================
-        # 7. Guardar cambios
-        # =========================
         layer.commitChanges()
 
+        # =========================
+        # 7. SIMBOLOGÍA AUTOMÁTICA
+        # =========================
+        field_name = 'viabilidad'
 
+        # Rampa de color (rojo → verde)
+        style = QgsStyle().defaultStyle()
+        ramp = style.colorRamp('RdYlGn')
+
+        ranges = []
+
+        def crear_rango(min_val, max_val, label, color):
+            symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+            symbol.setSize(2)
+            symbol.setColor(color)
+            return QgsRendererRange(min_val, max_val, symbol, label)
+
+        ranges.append(crear_rango(0.0, 0.4, "Muy baja", QColor(215, 25, 28)))
+        ranges.append(crear_rango(0.4, 0.6, "Baja", QColor(253, 174, 97)))
+        ranges.append(crear_rango(0.6, 0.75, "Media", QColor(255, 255, 191)))
+        ranges.append(crear_rango(0.75, 0.9, "Alta", QColor(166, 217, 106)))
+        ranges.append(crear_rango(0.9, 1.0, "Muy alta", QColor(26, 225, 60)))
+
+        renderer = QgsGraduatedSymbolRenderer(field_name, ranges)
+        renderer.setMode(QgsGraduatedSymbolRenderer.Custom)
+        renderer.updateColorRamp(ramp)
+
+        layer.setRenderer(renderer)
+        layer.triggerRepaint()
 
         # =========================
         # 8. Mensaje final
         # =========================
-        QMessageBox.information(None, "Éxito", "Máscara aplicada y viabilidad calculada correctamente")
+        QMessageBox.information(None, "Éxito", "Mapa generado con máscara, viabilidad y simbología automática")
