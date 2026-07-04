@@ -1,7 +1,7 @@
 [general]
 name=Glamping Viability Analyzer
 qgisMinimumVersion=3.10
-author=Tu Nombre
-email=tu_email@example.com
+author=Maria Camila Rueda Cano
+email=uo311054@uniovi.com
 description=Plugin para analizar la viabilidad económica de glampings en Asturias mediante QGIS
 version=1.0

@@ -16,9 +16,14 @@ from qgis import processing
 import os.path
 
 
+# =========================================================
+# VENTANA
+# =========================================================
+
 class ViabilityDialog(QDialog):
 
     def __init__(self):
+
         super().__init__()
 
         self.setWindowTitle("Glamping Viability Analyzer")
@@ -26,9 +31,9 @@ class ViabilityDialog(QDialog):
 
         layout = QVBoxLayout()
 
-        # =========================
+        # -------------------------------------------------
         # ACCESIBILIDAD
-        # =========================
+        # -------------------------------------------------
 
         self.label_acces = QLabel("Accesibilidad: 0.30")
 
@@ -42,9 +47,9 @@ class ViabilityDialog(QDialog):
             )
         )
 
-        # =========================
+        # -------------------------------------------------
         # TURISMO
-        # =========================
+        # -------------------------------------------------
 
         self.label_tur = QLabel("Turismo: 0.30")
 
@@ -58,9 +63,9 @@ class ViabilityDialog(QDialog):
             )
         )
 
-        # =========================
+        # -------------------------------------------------
         # PENDIENTE
-        # =========================
+        # -------------------------------------------------
 
         self.label_pend = QLabel("Pendiente: 0.40")
 
@@ -74,15 +79,15 @@ class ViabilityDialog(QDialog):
             )
         )
 
-        # =========================
+        # -------------------------------------------------
         # BOTÓN
-        # =========================
+        # -------------------------------------------------
 
         self.btn_run = QPushButton("Calcular viabilidad")
 
-        # =========================
+        # -------------------------------------------------
         # LAYOUT
-        # =========================
+        # -------------------------------------------------
 
         layout.addWidget(self.label_acces)
         layout.addWidget(self.slider_acces)
@@ -98,6 +103,10 @@ class ViabilityDialog(QDialog):
         self.setLayout(layout)
 
 
+# =========================================================
+# PLUGIN
+# =========================================================
+
 class GlampingViability:
 
     def __init__(self, iface):
@@ -105,6 +114,10 @@ class GlampingViability:
         self.iface = iface
         self.plugin_dir = os.path.dirname(__file__)
         self.action = None
+
+    # =====================================================
+    # GUI
+    # =====================================================
 
     def initGui(self):
 
@@ -122,6 +135,10 @@ class GlampingViability:
 
         self.iface.addToolBarIcon(self.action)
 
+    # =====================================================
+    # UNLOAD
+    # =====================================================
+
     def unload(self):
 
         self.iface.removePluginMenu(
@@ -131,15 +148,23 @@ class GlampingViability:
 
         self.iface.removeToolBarIcon(self.action)
 
+    # =====================================================
+    # RUN
+    # =====================================================
+
     def run(self):
 
         dialog = ViabilityDialog()
 
+        # =================================================
+        # EJECUTAR
+        # =================================================
+
         def ejecutar():
 
-            # =========================
-            # PESOS DINÁMICOS
-            # =========================
+            # ---------------------------------------------
+            # PESOS
+            # ---------------------------------------------
 
             peso_acces = dialog.slider_acces.value() / 100
             peso_turismo = dialog.slider_tur.value() / 100
@@ -161,49 +186,37 @@ class GlampingViability:
 
                 return
 
-            # =========================
-            # NORMALIZAR PESOS
-            # =========================
+            # NORMALIZAR
 
             peso_acces /= total
             peso_turismo /= total
             peso_pend /= total
 
-            # =========================
+            # ---------------------------------------------
             # CAPAS
-            # =========================
+            # ---------------------------------------------
 
-            capas_puntos = QgsProject.instance().mapLayersByName(
+            puntos = QgsProject.instance().mapLayersByName(
                 'Muestreado'
-            )
+            )[0]
 
-            capas_mask = QgsProject.instance().mapLayersByName(
-                'espana_mask'
-            )
+            mask = QgsProject.instance().mapLayersByName(
+                'Asturias_Mask'
+            )[0]
 
-            capas_costa = QgsProject.instance().mapLayersByName(
-                'costa_asturias'
-            )
+            buffer_costa = QgsProject.instance().mapLayersByName(
+                'buffer_costa_150m'
+            )[0]
 
-            if not capas_puntos or not capas_mask or not capas_costa:
+            suelo_apto = QgsProject.instance().mapLayersByName(
+                'suelo_apto_glamping'
+            )[0]
 
-                QMessageBox.warning(
-                    None,
-                    "Error",
-                    "Faltan capas necesarias"
-                )
-
-                return
-
-            puntos = capas_puntos[0]
-            mask = capas_mask[0]
-            costa = capas_costa[0]
-
-            # =========================
+            # ---------------------------------------------
             # QUITAR MAR
-            # =========================
+            # ---------------------------------------------
 
-            resultado = processing.run(
+            tierra_result = processing.run(
                 "native:extractbylocation",
                 {
                     'INPUT': puntos,
@@ -213,52 +226,17 @@ class GlampingViability:
                 }
             )
 
-            layer = resultado['OUTPUT']
+            layer = tierra_result['OUTPUT']
 
-            # =========================
-            # REPROYECTAR COSTA
-            # =========================
-
-            costa_proj = processing.run(
-                "native:reprojectlayer",
-                {
-                    'INPUT': costa,
-                    'TARGET_CRS': QgsCoordinateReferenceSystem(
-                        'EPSG:3041'
-                    ),
-                    'OUTPUT': 'memory:'
-                }
-            )['OUTPUT']
-
-            # =========================
-            # BUFFER LEGAL 150m
-            # =========================
-
-            buffer_result = processing.run(
-                "native:buffer",
-                {
-                    'INPUT': costa_proj,
-                    'DISTANCE': 150,
-                    'SEGMENTS': 5,
-                    'END_CAP_STYLE': 0,
-                    'JOIN_STYLE': 0,
-                    'MITER_LIMIT': 2,
-                    'DISSOLVE': True,
-                    'OUTPUT': 'memory:'
-                }
-            )
-
-            buffer_costa = buffer_result['OUTPUT']
-
-            # =========================
-            # ELIMINAR ZONA COSTERA
-            # =========================
+            # ---------------------------------------------
+            # QUITAR COSTA
+            # ---------------------------------------------
 
             legal_result = processing.run(
                 "native:extractbylocation",
                 {
                     'INPUT': layer,
-                    'PREDICATE': [2],  # disjoint
+                    'PREDICATE': [2],   # disjoint
                     'INTERSECT': buffer_costa,
                     'OUTPUT': 'memory:'
                 }
@@ -266,11 +244,39 @@ class GlampingViability:
 
             layer = legal_result['OUTPUT']
 
+            # ---------------------------------------------
+            # REPARAR GEOMETRÍAS
+            # ---------------------------------------------
+
+            suelo_fix = processing.run(
+                "native:fixgeometries",
+                {
+                    'INPUT': suelo_apto,
+                    'OUTPUT': 'memory:'
+                }
+            )['OUTPUT']
+
+            # ---------------------------------------------
+            # FILTRAR SUELO APTO
+            # ---------------------------------------------
+
+            suelo_result = processing.run(
+                "native:extractbylocation",
+                {
+                    'INPUT': layer,
+                    'PREDICATE': [0],
+                    'INTERSECT': suelo_fix,
+                    'OUTPUT': 'memory:'
+                }
+            )
+
+            layer = suelo_result['OUTPUT']
+
             layer.setName("Resultado_Final_Legal")
 
-            # =========================
-            # CREAR CAMPO VIABILIDAD
-            # =========================
+            # ---------------------------------------------
+            # CAMPO VIABILIDAD
+            # ---------------------------------------------
 
             if 'viabilidad' not in [
                 f.name() for f in layer.fields()
@@ -290,9 +296,9 @@ class GlampingViability:
             if not layer.isEditable():
                 layer.startEditing()
 
-            # =========================
+            # ---------------------------------------------
             # ÍNDICES
-            # =========================
+            # ---------------------------------------------
 
             idx_acces = layer.fields().indexFromName(
                 'acces_norm'
@@ -310,23 +316,9 @@ class GlampingViability:
                 'viabilidad'
             )
 
-            if -1 in (
-                idx_acces,
-                idx_turismo,
-                idx_pend
-            ):
-
-                QMessageBox.warning(
-                    None,
-                    "Error",
-                    "Faltan campos necesarios"
-                )
-
-                return
-
-            # =========================
-            # CALCULAR VIABILIDAD
-            # =========================
+            # ---------------------------------------------
+            # CALCULAR
+            # ---------------------------------------------
 
             for feat in layer.getFeatures():
 
@@ -348,9 +340,9 @@ class GlampingViability:
 
             layer.commitChanges()
 
-            # =========================
+            # ---------------------------------------------
             # SIMBOLOGÍA
-            # =========================
+            # ---------------------------------------------
 
             ranges = []
 
@@ -428,15 +420,11 @@ class GlampingViability:
 
             layer.triggerRepaint()
 
-            # =========================
-            # AÑADIR CAPA FINAL
-            # =========================
+            # ---------------------------------------------
+            # AÑADIR CAPA
+            # ---------------------------------------------
 
             QgsProject.instance().addMapLayer(layer)
-
-            # =========================
-            # MENSAJE FINAL
-            # =========================
 
             QMessageBox.information(
                 None,
@@ -446,14 +434,10 @@ class GlampingViability:
 
             dialog.close()
 
-        # =========================
-        # CONECTAR BOTÓN
-        # =========================
+        # =================================================
+        # BOTÓN
+        # =================================================
 
         dialog.btn_run.clicked.connect(ejecutar)
-
-        # =========================
-        # MOSTRAR VENTANA
-        # =========================
 
         dialog.exec_()
